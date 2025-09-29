@@ -1,50 +1,28 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
-import { StyleSheet, View, Text, FlatList, ActivityIndicator, Pressable, Animated } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, View, Text, FlatList, ActivityIndicator, Pressable } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
-import Background from '../components/Background';       // 👈 NYTT
+import Background from '../components/Background';
 import GradientButton from '../components/GradientButton';
 import SearchBar from '../components/SearchBar';
 import DrinkCard from '../components/DrinkCard';
+import ProgressBar from '../components/ProgressBar';
 
+// Token set used to query TheCocktailDB by first character (a–z, 0–9)
 const LETTERS = 'abcdefghijklmnopqrstuvwxyz'.split('');
 const DIGITS = '0123456789'.split('');
-const TOKENS = [...LETTERS, ...DIGITS]; // 36
-
-function ProgressBar({ progress = 0, total = 1, height = 12, showLabel = true }) {
-  const pct = total > 0 ? Math.min(progress / total, 1) : 0;
-  const anim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(anim, { toValue: pct, duration: 220, useNativeDriver: false }).start();
-  }, [pct]);
-
-  const width = anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
-
-  return (
-    <View style={[styles.pbWrap, { height }]}>
-      <Animated.View style={[styles.pbFillWrap, { width }]}>
-        <LinearGradient
-          colors={['#22c55e', '#14b8a6']} // Mojito
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.pbFill}
-        />
-      </Animated.View>
-      {showLabel ? <Text style={styles.pbLabel}>{`${Math.round(pct * 100)}%`}</Text> : null}
-    </View>
-  );
-}
+const TOKENS = [...LETTERS, ...DIGITS];
 
 export default function AllDrinksScreen({ navigation }) {
+  // Full dataset & UI state
   const [allDrinks, setAllDrinks] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState(0);          // counts finished token fetches (0..36)
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
-  const [selectedDrink, setSelectedDrink] = useState(null);
+  const [selectedDrink, setSelectedDrink] = useState(null); // currently opened DrinkCard
 
+  // Fetch all drinks by querying TheCocktailDB for each starting token (a..z, 0..9)
   useEffect(() => {
     let cancelled = false;
 
@@ -58,6 +36,7 @@ export default function AllDrinksScreen({ navigation }) {
         const results = [];
         let completed = 0;
 
+        // Kick off all requests in parallel; update progress as each completes
         const promises = TOKENS.map(token =>
           fetch(`https://www.thecocktaildb.com/api/json/v1/1/search.php?f=${token}`)
             .then(res => {
@@ -67,15 +46,17 @@ export default function AllDrinksScreen({ navigation }) {
             .then(json => {
               if (json?.drinks?.length) results.push(...json.drinks);
             })
-            .catch(() => {})
+            .catch(() => {}) // ignore individual token failures
             .finally(() => {
               completed += 1;
-              if (!cancelled) setProgress(completed);
+              if (!cancelled) setProgress(completed); // drive the progress bar
             })
         );
 
+        // Wait for all tokens
         await Promise.all(promises);
 
+        // De-duplicate by idDrink and sort alphabetically
         const unique = Object.values(
           results.reduce((acc, item) => {
             acc[item.idDrink] = item;
@@ -93,9 +74,11 @@ export default function AllDrinksScreen({ navigation }) {
     };
 
     fetchAll();
+    // Cleanup: stop state updates if component unmounts
     return () => { cancelled = true; };
   }, []);
 
+  // Derived list filtered by search query (name/category/alcoholic)
   const filtered = useMemo(() => {
     const q = (query || '').trim().toLowerCase();
     if (!q) return allDrinks;
@@ -106,6 +89,7 @@ export default function AllDrinksScreen({ navigation }) {
     );
   }, [query, allDrinks]);
 
+  // Renders each drink row; opens DrinkCard on press
   const renderItem = ({ item }) => (
     <Pressable
       onPress={() => setSelectedDrink(item)}
@@ -120,9 +104,11 @@ export default function AllDrinksScreen({ navigation }) {
   return (
     <Background>
       <View style={styles.container}>
+        {/* Screen title + search */}
         <Text style={styles.title}>All Drinks</Text>
         <SearchBar value={query} onChangeText={setQuery} />
 
+        {/* Progress while loading, otherwise show counts */}
         <View style={{ alignItems: 'center', marginBottom: 12 }}>
           {loading ? (
             <ProgressBar progress={progress} total={TOKENS.length} />
@@ -131,6 +117,7 @@ export default function AllDrinksScreen({ navigation }) {
           )}
         </View>
 
+        {/* Loading state */}
         {loading && (
           <View style={styles.center}>
             <ActivityIndicator size="large" color="#14b8a6" />
@@ -138,12 +125,14 @@ export default function AllDrinksScreen({ navigation }) {
           </View>
         )}
 
+        {/* Error state */}
         {error && (
           <View style={styles.center}>
             <Text style={styles.error}>{error}</Text>
           </View>
         )}
 
+        {/* Main list or empty state (only when not loading and no error) */}
         {!loading && !error && (
           filtered.length > 0 ? (
             <FlatList
@@ -162,6 +151,7 @@ export default function AllDrinksScreen({ navigation }) {
           )
         )}
 
+        {/* Footer action */}
         <View style={styles.footer}>
           <GradientButton
             title="Back to home"
@@ -170,6 +160,7 @@ export default function AllDrinksScreen({ navigation }) {
         </View>
       </View>
 
+      {/* Modal-like details card when a drink is selected */}
       {selectedDrink ? (
         <DrinkCard
           drink={selectedDrink}
@@ -177,19 +168,22 @@ export default function AllDrinksScreen({ navigation }) {
         />
       ) : null}
 
+      {/* Light status bar to match dark background */}
       <StatusBar style="light" />
     </Background>
   );
 }
 
 const styles = StyleSheet.create({
-  // container för innehållet ovanpå Background
+  // Container for content rendered on top of Background
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 28 },
 
+  // Header and counts
   title: { color: colors.text, fontSize: 26, fontWeight: '800', textAlign: 'center', marginBottom: 12 },
   countText: { color: colors.subtext, textAlign: 'center' },
   listContent: { paddingBottom: 100 },
 
+  // List item card
   card: {
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: 12,
@@ -201,31 +195,12 @@ const styles = StyleSheet.create({
   cardText: { color: colors.text, fontSize: 18, fontWeight: '700' },
   cardSub: { color: colors.subtext, fontSize: 14, marginTop: 4 },
 
+  // Generic centered blocks (loading / error / empty)
   center: { alignItems: 'center', marginTop: 18 },
   info: { color: colors.subtext, marginTop: 8 },
   error: { color: '#f87171', marginTop: 8, fontWeight: '600' },
   emptyText: { color: colors.subtext, marginTop: 8 },
 
+  // Footer button container
   footer: { alignItems: 'center', marginVertical: 16 },
-
-  // ProgressBar
-  pbWrap: {
-    width: '100%',
-    maxWidth: 520,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 999,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.25)',
-  },
-  pbFillWrap: { height: '100%' },
-  pbFill: { height: '100%' },
-  pbLabel: {
-    position: 'absolute',
-    width: '100%',
-    textAlign: 'center',
-    top: -22,
-    color: colors.subtext,
-    fontSize: 12,
-  },
 });
