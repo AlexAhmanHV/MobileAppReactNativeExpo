@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, Animated, useRef, useEffect } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, Animated } from 'react-native';
 import colors from '../theme/colors';
 
 // ProgressBar component
